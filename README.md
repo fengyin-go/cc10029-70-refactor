@@ -17,6 +17,7 @@
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/resource.py  通用查询/导出/登记/动作接口
 │   ├── app/services/<key>.py    每个模块独立领域逻辑
+│   ├── app/services/dispatch.py 排课/资源申请共用的调度判定与占用读取
 │   ├── app/services/base.py     共享服务骨架
 │   └── app/store.py          内存数据仓库与示例数据
 ├── .gitignore
@@ -78,6 +79,13 @@ npm run dev
   `frontend/src/domain/<模块>.ts`，用于承载真实业务差异并维持36题位容量。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+- 排课和教学资源申请的占用读取统一走 `app/services/dispatch.py`：
+  `read_occupancy` 是唯一的占用读取入口，`check_claims` /
+  `ensure_claims_available` 是两者共用的冲突检查入口。排课仍区分授课教师和教室，
+  资源申请仍区分待审批与已归还；设备编号（如 `A-05`）在两个页面之间共享占用。
+- 冲突检查、状态落库和待办更新在同一把 `dispatch_lock` 内完成，保证一次业务处理
+  只产生一个可办结论；`POST /api/<module>/<id>/occupancy` 供值班人核对同一次请求。
+  历史已确认排课与已归还领用（含只在“审批状态”里写归还的记录）沿用同一读取口径。
 
 领域：应用开发
 子方向：web前端/全栈开发

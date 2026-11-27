@@ -10,6 +10,12 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
 from app.services import service_for
+from app.services.dispatch import (
+    OccupancyConflictError,
+    dispatch_lock,
+    evaluate_resource,
+    inspect_schedule_change,
+)
 
 router = APIRouter(prefix="/api", tags=["业务资源"])
 
@@ -85,7 +91,10 @@ def get_entry(module: str, entry_id: int) -> dict[str, Any]:
 @router.post("/{module}", response_model=ActionResult)
 def create_entry(module: str, payload: EntryPayload) -> ActionResult:
     service = require_service(module)
-    entry, missing = service.create_entry(payload.values)
+    try:
+        entry, missing = service.create_entry(payload.values)
+    except OccupancyConflictError as error:
+        return ActionResult(ok=False, message=str(error))
     if missing:
         return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
     return ActionResult(ok=True, message=f"{service.ENTITY}已登记", entry=entry)
@@ -96,3 +105,23 @@ def run_action(module: str, entry_id: int, payload: ActionPayload) -> ActionResu
     service = require_service(module)
     entry, message = service.run_action(entry_id, payload.action.strip())
     return ActionResult(ok=entry is not None, message=message, entry=entry)
+
+
+@router.post("/{module}/{entry_id}/occupancy", response_model=dict)
+def check_occupancy(module: str, entry_id: int) -> dict[str, Any]:
+    """核对某条排课/资源申请能否继续办理。
+
+    两个页面的值班人用同一个入口核对同一次请求，看到的是同一套占用读取口径。
+    """
+    service = require_service(module)
+    if module not in ("class_schedule", "resource_apply"):
+        raise HTTPException(status_code=404, detail=f"模块 {module} 不使用占用判定")
+    entry = service.get_entry(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_id} 不存在或已归档")
+    with dispatch_lock:
+        if module == "class_schedule":
+            return inspect_schedule_change(entry, exclude_id=entry_id).as_dict()
+        # 核对“能否继续办理”，与审批动作同一口径：只认已落定的占用。
+        return evaluate_resource(
+            entry, exclude_id=entry_id, committed_only=True).as_dict()

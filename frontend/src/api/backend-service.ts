@@ -37,6 +37,23 @@ export async function runAction(
   return await response.json()
 }
 
+export type OccupancyDecision = {
+  allowed: boolean
+  message: string
+  conflicts?: { module: string; value: string; time_slot: string; message: string }[]
+  qualification?: { device: string; qualified: boolean; reason: string }
+  session?: { time_slot: string; confirmed: boolean; reason: string }
+}
+
+export async function checkOccupancy(
+  key: string,
+  id: number,
+): Promise<OccupancyDecision> {
+  const response = await request(`/api/${key}/${id}/occupancy`, { method: 'POST' })
+  if (!response.ok) throw new Error('占用核对失败')
+  return await response.json()
+}
+
 export async function downloadEntries(
   key: string,
   filters: Record<string, string> = {},

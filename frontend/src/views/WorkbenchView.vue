@@ -60,6 +60,15 @@
             >
               {{ action }}
             </button>
+            <button
+              v-if="supportsOccupancy"
+              class="link"
+              type="button"
+              :data-testid="`occupancy-${row.id}`"
+              @click="reviewOccupancy(row)"
+            >
+              核对占用
+            </button>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -88,6 +97,9 @@
 
     <footer class="page-foot">
       <span>共 {{ total }} 条{{ meta.name }}记录</span>
+      <span v-if="occupancyMessage" class="occupancy-text" data-testid="occupancy-result">
+        {{ occupancyMessage }}
+      </span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -97,6 +109,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import {
+  checkOccupancy,
   createEntry,
   downloadEntries,
   listEntries,
@@ -107,6 +120,8 @@ import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
+const supportsOccupancy = meta.key === 'class_schedule' || meta.key === 'resource_apply'
+const occupancyMessage = ref('')
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
@@ -167,12 +182,26 @@ async function submitCreate() {
 
 async function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
+  occupancyMessage.value = ''
   try {
     const result = await applyAction(meta.key, Number(row.id), action)
     if (!result.ok) throw new Error(result.message)
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '操作失败'
+  }
+}
+
+async function reviewOccupancy(row: EntryRow) {
+  errorMessage.value = ''
+  occupancyMessage.value = ''
+  try {
+    const decision = await checkOccupancy(meta.key, Number(row.id))
+    occupancyMessage.value = decision.allowed
+      ? `可以继续办理：${decision.message}`
+      : `不能继续办理：${decision.message}`
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '占用核对失败'
   }
 }
 

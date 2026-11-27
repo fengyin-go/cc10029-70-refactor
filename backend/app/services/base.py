@@ -35,13 +35,17 @@ class BaseModuleService:
             field = self.LIST_FIELDS[0]
             rows = [row for row in rows if keyword.casefold() in str(row.get(field, "")).casefold()]
         if status:
-            rows = [row for row in rows if row.get("status") == status]
+            rows = [row for row in rows if self.entry_status(row) == status]
         total = len(rows)
         start = (page - 1) * size
         return rows[start:start + size], total
 
     def get_entry(self, entry_id: int) -> dict[str, Any] | None:
         return store.find(self.MODULE, entry_id)
+
+    def entry_status(self, entry: dict[str, Any]) -> str:
+        """读取记录状态；默认直接读 ``status``，历史口径由子类覆盖。"""
+        return str(entry.get("status") or "")
 
     def create_entry(self, values: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
         missing = [
@@ -75,7 +79,7 @@ class BaseModuleService:
         """返回本模块的状态统计与业务对象，供其他模块读取。"""
         rows = store.rows(self.MODULE)
         by_status = {
-            status: sum(1 for row in rows if row.get("status") == status)
+            status: sum(1 for row in rows if self.entry_status(row) == status)
             for status in self.STATUS_ORDER
         }
         return {
